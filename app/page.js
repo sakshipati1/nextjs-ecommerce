@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { addToCart } from "./lib/cart";
+import toast from "react-hot-toast"; // Imported react-hot-toast
 
 // High-quality, distinct images for each category
 const CATEGORY_IMAGES = {
@@ -95,7 +96,7 @@ export default function Home() {
         setError(
           "Unable to load products. Please check your MongoDB Atlas IP whitelist.",
         );
-        loading(false);
+        setLoading(false);
       });
   }, []);
 
@@ -114,14 +115,13 @@ export default function Home() {
       const response = await fetch("/api/ai-search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchInput }), // Simplified payload
+        body: JSON.stringify({ query: searchInput }),
       });
 
       if (!response.ok) throw new Error("AI Search request failed.");
 
       const data = await response.json();
 
-      // FIX: Matches the raw array structure returned from your backend aggregation pipeline
       if (data && Array.isArray(data)) {
         setFilteredProducts(data);
       } else {
@@ -141,8 +141,25 @@ export default function Home() {
     ? filteredProducts.length
     : 0;
 
+  // UPDATED: Added interactive toast confirmation popup
   const handleAddToCart = (product) => {
     addToCart(product);
+
+    // Smooth micro-interaction alert popup
+    toast.success(`"${product.title}" successfully added to cart!`, {
+      style: {
+        borderRadius: "14px",
+        background: "#0f172a", // Match your slate-900 background palette
+        color: "#fff",
+        fontSize: "14px",
+        fontWeight: "500",
+        padding: "12px 24px",
+      },
+      iconTheme: {
+        primary: "#38bdf8", // Clean sky-400 theme match
+        secondary: "#0f172a",
+      },
+    });
   };
 
   return (

@@ -1,5 +1,6 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import Navbar from "./components/Navbar";
+import { Toaster } from "react-hot-toast"; // Imported the global toast container
 import "./globals.css";
 
 const geistSans = Geist({
@@ -25,6 +26,9 @@ export default function RootLayout({ children }) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
+        {/* Global listener for toast popups */}
+        <Toaster position="top-center" reverseOrder={false} />
+
         <Navbar />
         {children}
       </body>
