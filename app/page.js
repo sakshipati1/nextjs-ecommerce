@@ -95,7 +95,7 @@ export default function Home() {
         setError(
           "Unable to load products. Please check your MongoDB Atlas IP whitelist.",
         );
-        setLoading(false);
+        loading(false);
       });
   }, []);
 
@@ -114,15 +114,16 @@ export default function Home() {
       const response = await fetch("/api/ai-search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchInput, products }),
+        body: JSON.stringify({ query: searchInput }), // Simplified payload
       });
 
       if (!response.ok) throw new Error("AI Search request failed.");
 
       const data = await response.json();
 
-      if (data && Array.isArray(data.results)) {
-        setFilteredProducts(data.results);
+      // FIX: Matches the raw array structure returned from your backend aggregation pipeline
+      if (data && Array.isArray(data)) {
+        setFilteredProducts(data);
       } else {
         setFilteredProducts([]);
       }

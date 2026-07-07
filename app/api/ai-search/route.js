@@ -1,66 +1,119 @@
+export const dynamic = "force-dynamic";
+import connectDB from "@/lib/db";
 import { GoogleGenAI } from "@google/genai";
-import { NextResponse } from "next/server";
+import Product from "@/models/product";
 
-// Initialize the Gemini client using your secure environment variable
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+});
+
+async function generatevector(text) {
+  const response = await ai.models.embedContent({
+    model: "gemini-embedding-2",
+    contents: text,
+  });
+
+  const values =
+    response?.embedding?.values || response?.embeddings?.[0]?.values;
+
+  if (!values) {
+    console.log(
+      "👉 DEBUG: Gemini Full Response Object structure:",
+      JSON.stringify(response, null, 2),
+    );
+    throw new Error(
+      "Failed to extract embedding values from Gemini API response.",
+    );
+  }
+
+  return values;
+}
 
 export async function POST(request) {
-  try {
-    const { query, products } = await request.json();
+  await connectDB();
 
-    // If search is empty, return all products immediately
-    if (!query || !query.trim()) {
-      return NextResponse.json({ results: products });
+  try {
+    const body = await request.json();
+    const queryText = body.q || body.query;
+
+    if (!queryText) {
+      return Response.json(
+        { error: "Query payload text is missing" },
+        { status: 400 },
+      );
     }
 
-    // 1. Format the product catalog into a highly readable block for the AI
-    const productCatalog = products
-      .map((p) => {
-        const id = p._id || p.id;
-        return `ID: ${id} | Title: ${p.title} | Category: ${p.category || "Uncategorized"} | Description: ${p.description || "N/A"} | Price: $${p.price || 0}`;
-      })
-      .join("\n");
+    // 1. Turn the user's search text into a vector array
+    const queryVector = await generatevector(queryText);
 
-    // 2. Build a highly specific prompt instructing the model on its task
-    const prompt = `
-      You are an e-commerce search engine helper. Analyze the user's search query and match it against the product catalog below.
-      
-      Look for direct matches, categories, and semantic context (e.g., if they search for "clothing", match shirts or pants; if they search for "warm", match jackets).
-      
-      User Search Query: "${query}"
-      
-      Product Catalog:
-      ${productCatalog}
-      
-      Output requirement: Return a JSON array containing ONLY the string IDs of the matched products. Example: ["123", "456"]. If no items match, return an empty array [].
-    `;
+    console.log(
+      "👉 DEBUG: Your query vector array actual length is:",
+      queryVector.length,
+    );
 
-    // 3. Request the response from Gemini using Structured JSON output
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        // This forces Gemini to send back clean JSON without markdown code blocks
-        responseMimeType: "application/json",
+    // 2. Query your Atlas vector index using an updated aggregation pipeline
+    const results = await Product.aggregate([
+      {
+        $vectorSearch: {
+          index: "vector_index",
+          path: "embedding",
+          queryVector: queryVector,
+          numCandidates: 100,
+          limit: 5,
+        },
       },
-    });
+      {
+        // Project document fields along with the calculated vector score
+        $project: {
+          _id: 1,
+          title: 1,
+          price: 1,
+          description: 1,
+          category: 1,
+          image: 1,
+          score: { $meta: "vectorSearchScore" }, // Captures how closely the item matches
+        },
+      },
+      {
+        // Base baseline filter: Drops anything universally irrelevant below 0.65
+        $match: {
+          score: { $gte: 0.65 },
+        },
+      },
+    ]);
 
-    const responseText = response.text ? response.text.trim() : "[]";
+    // 3. DYNAMIC FILTER: Cleanly drop unrelated trailing recommendations (like the Bean Bag)
+    let finalFilteredResults = [];
 
-    // 4. Parse the array of IDs returned by the AI
-    const matchedIds = JSON.parse(responseText);
+    if (results.length > 0) {
+      const topMatchScore = results[0].score;
+      console.log(`🎯 Top search match score is: ${topMatchScore}`);
 
-    // 5. Filter the original array, matching string-to-string to prevent type mismatches
-    const filtered = products.filter((p) => {
-      const targetId = String(p._id || p.id);
-      return matchedIds.map(String).includes(targetId);
-    });
+      finalFilteredResults = results.filter((item) => {
+        // Calculate the similarity gap between the top result and the current item
+        const scoreGap = topMatchScore - item.score;
 
-    return NextResponse.json({ results: filtered });
+        // Keep item if it stays within a strict 0.08 margin of the best result
+        const isCloseMatch = scoreGap <= 0.08;
+
+        if (!isCloseMatch) {
+          console.log(
+            `✂️ Dropped "${item.title}" (Score: ${item.score}) - Failed relative score gap test.`,
+          );
+        }
+        return isCloseMatch;
+      });
+    }
+
+    console.log(
+      `👉 DEBUG: Found ${finalFilteredResults.length} relevant products after relative gap filtering.`,
+    );
+
+    return Response.json(finalFilteredResults);
   } catch (error) {
-    console.error("❌ Gemini Search API Error:", error);
-    return NextResponse.json(
-      { error: "Internal Server Error during AI search execution." },
+    console.error("Vector search failure:", error);
+    return Response.json(
+      { error: "Something went wrong during search" },
       { status: 500 },
     );
   }

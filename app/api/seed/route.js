@@ -1,13 +1,41 @@
 import connectDB from "@/lib/db";
-
+import { GoogleGenAI } from "@google/genai";
 import Product from "@/models/product";
+
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+});
+
+// Helper function to fetch the vector coordinates from Gemini safely
+async function generatevector(text) {
+  try {
+    const response = await ai.models.embedContent({
+      model: "gemini-embedding-2",
+      contents: text,
+    });
+
+    // Safely grab the vector array using fallback checks for the new SDK
+    const values =
+      response?.embedding?.values || response?.embeddings?.[0]?.values;
+    return values;
+  } catch (error) {
+    console.error(
+      `❌ Gemini API failed for text: "${text.substring(0, 25)}..."`,
+      error,
+    );
+    return null;
+  }
+}
 
 export async function GET() {
   await connectDB();
 
+  console.log("🧹 Clearing existing items from the database...");
+  // Clear existing items
   await Product.deleteMany();
 
-  await Product.insertMany([
+  // Your original mock dataset
+  const rawProducts = [
     {
       title: "Blue Sneakers",
       description: "Comfortable and stylish sneakers for everyday wear.",
@@ -288,7 +316,50 @@ export async function GET() {
       category: "Apparel",
       image: "https://picsum.photos/500/300",
     },
-  ]);
+  ];
 
-  return Response.json({ message: "Database seeded successfully" });
+  const productsWithVectors = [];
+
+  for (const product of rawProducts) {
+    console.log(`⏳ Generating embedding for: ${product.title}`);
+
+    // CHANGES APPLIED HERE: Using multiplied string weights for Title and Category
+    // This forces Atlas to prioritize item types over the secondary description words
+    const textToEmbed = `PRODUCT: ${product.title}, ${product.title}. TYPE: ${product.category}, ${product.category}. INFO: ${product.description}`;
+
+    const embedding = await generatevector(textToEmbed);
+
+    if (embedding && embedding.length === 3072) {
+      productsWithVectors.push({
+        ...product,
+        embedding: embedding,
+      });
+      console.log(`✅ Success (Length 3072): ${product.title}`);
+    } else {
+      console.log(
+        `❌ Skipped product due to extraction failure: ${product.title}`,
+      );
+    }
+  }
+
+  if (productsWithVectors.length > 0) {
+    await Product.insertMany(productsWithVectors);
+    console.log(
+      `🎉 Database seeded with ${productsWithVectors.length} vector documents successfully!`,
+    );
+
+    return Response.json({
+      success: true,
+      message: `Database seeded with ${productsWithVectors.length} vectors successfully using weighted gemini-embedding-2!`,
+    });
+  } else {
+    return Response.json(
+      {
+        success: false,
+        message:
+          "No products were seeded. Check terminal console logs for failures.",
+      },
+      { status: 500 },
+    );
+  }
 }

@@ -16,15 +16,41 @@ export default function CheckoutPage() {
     payment: "Cash on delivery",
   });
   const [submitted, setSubmitted] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    setSubmitted(true);
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...formData,
+          total: subtotal,
+          items: orderSummary,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to place order");
+      }
+
+      setSubmitted(true);
+      alert("Thank you! Your order has been placed successfully.");
+    } catch (error) {
+      console.error(error);
+      alert("Sorry, we could not place your order right now.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const subtotal = orderSummary.reduce((total, item) => total + item.price, 0);
@@ -110,12 +136,28 @@ export default function CheckoutPage() {
             </label>
 
             <button
-              type="submit"
-              className="w-full rounded-2xl bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700"
+              type="button"
+              onClick={() => setShowDetails((prev) => !prev)}
+              className="w-full cursor-pointer rounded-2xl border border-sky-200 bg-sky-50 px-5 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-100"
             >
-              Confirm order
+              {showDetails ? "Hide delivery details" : "View delivery details"}
+            </button>
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full cursor-pointer rounded-2xl bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-sky-400"
+            >
+              {isSubmitting ? "Placing order..." : "Confirm order"}
             </button>
           </form>
+
+          {showDetails && (
+            <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-700">
+              We will call before delivery and keep your order ready for the
+              scheduled society drop-off.
+            </div>
+          )}
 
           {submitted && (
             <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
