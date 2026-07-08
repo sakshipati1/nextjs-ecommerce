@@ -1,4 +1,3 @@
-// app/checkout/page.js
 "use client";
 import { useEffect, useState } from "react";
 import { getCart, clearCart } from "../lib/cart";
@@ -35,6 +34,21 @@ export default function CheckoutPage() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Utility to dynamically load the external Razorpay checkout script modal
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      if (window.Razorpay) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
   const handleSubmitOrder = async (e) => {
     e.preventDefault();
 
@@ -44,46 +58,111 @@ export default function CheckoutPage() {
     }
 
     setIsSubmitting(true);
-    const loadingToast = toast.loading("Processing your neighborhood order...");
+    const loadingToast = toast.loading("Initializing payment gateway...");
 
     try {
-      // Map cart details to match our database model structure
-      const formattedItems = cartItems.map((item) => ({
-        productId: item._id || item.id,
-        title: item.title,
-        price: item.price,
-        quantity: item.quantity || 1,
-      }));
-
-      const response = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: formattedItems,
-          totalAmount: totalAmount,
-          shippingAddress: formData,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to place order.");
+      // 1. Load Razorpay Checkout SDK
+      const isScriptLoaded = await loadRazorpayScript();
+      if (!isScriptLoaded) {
+        throw new Error(
+          "Razorpay payment gateway failed to load. Are you connected to the internet?",
+        );
       }
 
-      // Success sequence
+      // 2. Request backend API to generate unique transaction Order ID
+      const paymentResponse = await fetch("/api/razorpay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: totalAmount }),
+      });
+
+      const paymentData = await paymentResponse.json();
+
+      if (!paymentResponse.ok) {
+        throw new Error(
+          paymentData.error ||
+            "Failed to initialize secure transaction session.",
+        );
+      }
+
       toast.dismiss(loadingToast);
-      toast.success("Order placed successfully! 🎉", { duration: 5000 });
 
-      clearCart(); // Clean up local cart data
+      // 3. Configure and open the interactive Razorpay checkout modal overlay
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        amount: paymentData.amount,
+        currency: paymentData.currency,
+        name: "NexCart Marketplace",
+        description: "Society Order Payment Fulfillment",
+        order_id: paymentData.orderId,
+        handler: async function (razorpayResponse) {
+          const processToast = toast.loading(
+            "Payment received! Saving your order details...",
+          );
 
-      // UPDATED: Redirects to the newly created success screen
-      router.push("/orders/success");
+          try {
+            // Map cart details to match our database model structure
+            const formattedItems = cartItems.map((item) => ({
+              productId: item._id || item.id,
+              title: item.title,
+              price: item.price,
+              quantity: item.quantity || 1,
+            }));
+
+            // 4. Securely store order transaction inside MongoDB upon authorization success
+            const saveOrderResponse = await fetch("/api/orders", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                items: formattedItems,
+                totalAmount: totalAmount,
+                shippingAddress: formData,
+                paymentId: razorpayResponse.razorpay_payment_id, // attaches transaction proof token
+              }),
+            });
+
+            const data = await saveOrderResponse.json();
+
+            if (!saveOrderResponse.ok) {
+              throw new Error(data.error || "Failed to catalog order details.");
+            }
+
+            toast.dismiss(processToast);
+            toast.success("Transaction Complete & Order Placed! 🎉", {
+              duration: 5000,
+            });
+
+            clearCart(); // Wipe active local cart context
+            router.push("/orders/success");
+          } catch (err) {
+            toast.dismiss(processToast);
+            toast.error(
+              err.message ||
+                "Payment recorded but failed to update status pipeline.",
+            );
+          }
+        },
+        prefill: {
+          name: formData.fullName,
+          contact: formData.phone,
+        },
+        theme: {
+          color: "#0284c7", // Matches NexCart sky blue UI branding
+        },
+        modal: {
+          ondismiss: function () {
+            setIsSubmitting(false);
+            toast.error("Payment screen closed by user.");
+          },
+        },
+      };
+
+      const paymentWindow = new window.Razorpay(options);
+      paymentWindow.open();
     } catch (error) {
-      console.error("Checkout submission failure:", error);
+      console.error("Checkout transaction failure:", error);
       toast.dismiss(loadingToast);
       toast.error(error.message || "Something went wrong.");
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -156,7 +235,7 @@ export default function CheckoutPage() {
                 required
                 value={formData.phone}
                 onChange={handleInputChange}
-                placeholder="Ex: +91 9876543210"
+                placeholder="Ex: 9876543210"
                 className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 transition-all"
               />
             </div>
@@ -167,8 +246,8 @@ export default function CheckoutPage() {
               className="w-full mt-6 rounded-2xl bg-slate-900 py-3.5 text-sm font-bold text-white shadow-md transition-all hover:bg-slate-800 active:scale-[0.99] disabled:opacity-50"
             >
               {isSubmitting
-                ? "Placing Your Order..."
-                : `Place Order • $${totalAmount.toFixed(2)}`}
+                ? "Processing Gateway..."
+                : `Proceed to Pay • $${totalAmount.toFixed(2)}`}
             </button>
           </form>
         </div>
