@@ -14,9 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Mumbai Society Marketplace",
-  description:
-    "A community marketplace for Mumbai societies with easy shopping and checkout.",
+  title: "NexCart - Modern Society Marketplace",
+  description: "Shop community favorites from your doorstep.",
 };
 
 export default function RootLayout({ children }) {

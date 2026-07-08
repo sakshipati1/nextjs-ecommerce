@@ -53,3 +53,40 @@ export async function GET() {
     );
   }
 }
+export async function PUT(request) {
+  try {
+    await dbConnect();
+
+    const body = await request.json();
+    const { orderId, status } = body;
+
+    if (!orderId || !status) {
+      return NextResponse.json(
+        { error: "Missing order ID or status values" },
+        { status: 400 },
+      );
+    }
+
+    // Find the order and update its status
+    const updatedOrder = await Order.findByIdAndUpdate(
+      orderId,
+      { status },
+      { returnDocument: "after" }, // Returns the newly modified document
+    );
+
+    if (!updatedOrder) {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
+
+    return NextResponse.json(
+      { message: "Order status updated successfully!", order: updatedOrder },
+      { status: 200 },
+    );
+  } catch (error) {
+    console.error("Failed to update order status:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
+  }
+}

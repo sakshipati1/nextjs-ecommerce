@@ -170,7 +170,7 @@ export default function Home() {
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.15),transparent_50%)]" />
           <div className="relative z-10">
             <p className="text-xs font-bold uppercase tracking-[0.4em] text-sky-400">
-              Mumbai society marketplace
+              Nexcart marketplace
             </p>
             <h1 className="mt-4 text-4xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl max-w-3xl leading-[1.15]">
               Shop community favorites from your doorstep
