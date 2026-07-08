@@ -17,9 +17,8 @@ export default function Navbar() {
           </div>
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-sky-600">
-              Mumbai Society
+              Nexcart
             </p>
-            <p className="text-lg font-semibold text-slate-900">Marketplace</p>
           </div>
         </Link>
 

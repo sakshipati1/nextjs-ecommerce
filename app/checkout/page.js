@@ -1,199 +1,216 @@
+// app/checkout/page.js
 "use client";
-
-import { useState } from "react";
-
-const orderSummary = [
-  { label: "Community hamper", price: 680 },
-  { label: "Delivery fee", price: 45 },
-];
+import { useEffect, useState } from "react";
+import { getCart, clearCart } from "../lib/cart";
+import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 
 export default function CheckoutPage() {
-  const [formData, setFormData] = useState({
-    name: "",
-    society: "",
-    flat: "",
-    phone: "",
-    payment: "Cash on delivery",
-  });
-  const [submitted, setSubmitted] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
+  const router = useRouter();
+  const [cartItems, setCartItems] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleChange = (event) => {
-    const { name, value } = event.target;
+  // Shipping Form State
+  const [formData, setFormData] = useState({
+    fullName: "",
+    societyName: "",
+    wingFlat: "",
+    phone: "",
+  });
+
+  // Load cart items on mount
+  useEffect(() => {
+    const items = getCart();
+    setCartItems(Array.isArray(items) ? items : []);
+  }, []);
+
+  // Calculate total price
+  const totalAmount = cartItems.reduce(
+    (acc, item) => acc + item.price * (item.quantity || 1),
+    0,
+  );
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
+  const handleSubmitOrder = async (e) => {
+    e.preventDefault();
+
+    if (cartItems.length === 0) {
+      toast.error("Your cart is empty!");
+      return;
+    }
+
     setIsSubmitting(true);
+    const loadingToast = toast.loading("Processing your neighborhood order...");
 
     try {
+      // Map cart details to match our database model structure
+      const formattedItems = cartItems.map((item) => ({
+        productId: item._id || item.id,
+        title: item.title,
+        price: item.price,
+        quantity: item.quantity || 1,
+      }));
+
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...formData,
-          total: subtotal,
-          items: orderSummary,
+          items: formattedItems,
+          totalAmount: totalAmount,
+          shippingAddress: formData,
         }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error("Failed to place order");
+        throw new Error(data.error || "Failed to place order.");
       }
 
-      setSubmitted(true);
-      alert("Thank you! Your order has been placed successfully.");
+      // Success sequence
+      toast.dismiss(loadingToast);
+      toast.success("Order placed successfully! 🎉", { duration: 5000 });
+
+      clearCart(); // Clean up local cart data
+
+      // UPDATED: Redirects to the newly created success screen
+      router.push("/orders/success");
     } catch (error) {
-      console.error(error);
-      alert("Sorry, we could not place your order right now.");
+      console.error("Checkout submission failure:", error);
+      toast.dismiss(loadingToast);
+      toast.error(error.message || "Something went wrong.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const subtotal = orderSummary.reduce((total, item) => total + item.price, 0);
-
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
-      <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-xl shadow-slate-900/5">
-          <p className="text-sm uppercase tracking-[0.35em] text-sky-600">
-            Checkout
-          </p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-900">
-            Place your society order
-          </h1>
-          <p className="mt-3 text-base leading-7 text-slate-600">
-            Complete a few details and we will prepare your Mumbai society
-            delivery.
+    <main className="min-h-screen bg-slate-50/50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl grid gap-8 md:grid-cols-2">
+        {/* Form Container */}
+        <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm sm:p-8">
+          <h2 className="text-xl font-bold tracking-tight text-slate-900 mb-1">
+            Delivery Details
+          </h2>
+          <p className="text-xs text-slate-500 mb-6">
+            Enter your resident information for society delivery fulfillment.
           </p>
 
-          <form onSubmit={handleSubmit} className="mt-8 space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="text-sm font-medium text-slate-700">
-                Full name
-                <input
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                  required
-                  className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                  placeholder="Asha Patel"
-                />
+          <form onSubmit={handleSubmitOrder} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                Full Name
               </label>
-              <label className="text-sm font-medium text-slate-700">
-                Society name
-                <input
-                  name="society"
-                  value={formData.society}
-                  onChange={handleChange}
-                  required
-                  className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                  placeholder="Arihant Heights"
-                />
-              </label>
+              <input
+                type="text"
+                name="fullName"
+                required
+                value={formData.fullName}
+                onChange={handleInputChange}
+                placeholder="Sakshi Patil"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 transition-all"
+              />
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="text-sm font-medium text-slate-700">
-                Flat / wing
-                <input
-                  name="flat"
-                  value={formData.flat}
-                  onChange={handleChange}
-                  required
-                  className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                  placeholder="B-204"
-                />
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                Society Name / Building Number
               </label>
-              <label className="text-sm font-medium text-slate-700">
-                Phone number
-                <input
-                  name="phone"
-                  value={formData.phone}
-                  onChange={handleChange}
-                  required
-                  className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                  placeholder="98765 43210"
-                />
-              </label>
+              <input
+                type="text"
+                name="societyName"
+                required
+                value={formData.societyName}
+                onChange={handleInputChange}
+                placeholder="Ex: Orchid Towers, Phase 1"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 transition-all"
+              />
             </div>
 
-            <label className="block text-sm font-medium text-slate-700">
-              Payment method
-              <select
-                name="payment"
-                value={formData.payment}
-                onChange={handleChange}
-                className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-              >
-                <option>Cash on delivery</option>
-                <option>UPI</option>
-                <option>Card</option>
-              </select>
-            </label>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                Wing & Flat Number
+              </label>
+              <input
+                type="text"
+                name="wingFlat"
+                required
+                value={formData.wingFlat}
+                onChange={handleInputChange}
+                placeholder="Ex: B-Wing, Apt 402"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 transition-all"
+              />
+            </div>
 
-            <button
-              type="button"
-              onClick={() => setShowDetails((prev) => !prev)}
-              className="w-full cursor-pointer rounded-2xl border border-sky-200 bg-sky-50 px-5 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-100"
-            >
-              {showDetails ? "Hide delivery details" : "View delivery details"}
-            </button>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                Contact Phone Number
+              </label>
+              <input
+                type="tel"
+                name="phone"
+                required
+                value={formData.phone}
+                onChange={handleInputChange}
+                placeholder="Ex: +91 9876543210"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 transition-all"
+              />
+            </div>
 
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="w-full cursor-pointer rounded-2xl bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-sky-400"
+              disabled={isSubmitting || cartItems.length === 0}
+              className="w-full mt-6 rounded-2xl bg-slate-900 py-3.5 text-sm font-bold text-white shadow-md transition-all hover:bg-slate-800 active:scale-[0.99] disabled:opacity-50"
             >
-              {isSubmitting ? "Placing order..." : "Confirm order"}
+              {isSubmitting
+                ? "Placing Your Order..."
+                : `Place Order • $${totalAmount.toFixed(2)}`}
             </button>
           </form>
+        </div>
 
-          {showDetails && (
-            <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-700">
-              We will call before delivery and keep your order ready for the
-              scheduled society drop-off.
-            </div>
-          )}
+        {/* Cart Summary Panel */}
+        <div className="rounded-3xl border border-slate-100 bg-slate-50 p-6 self-start">
+          <h3 className="text-lg font-bold text-slate-900 mb-4">
+            Order Summary
+          </h3>
 
-          {submitted && (
-            <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
-              Order request received for {formData.name || "your residence"}. We
-              will contact you shortly.
-            </div>
-          )}
-        </section>
-
-        <aside className="rounded-[2rem] border border-slate-200 bg-slate-900 p-8 text-white shadow-xl shadow-slate-900/10">
-          <p className="text-sm uppercase tracking-[0.35em] text-sky-200">
-            Your order
-          </p>
-          <div className="mt-6 space-y-4">
-            {orderSummary.map((item) => (
-              <div
-                key={item.label}
-                className="flex items-center justify-between text-sm text-slate-300"
-              >
-                <span>{item.label}</span>
-                <span>₹{item.price}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 border-t border-white/10 pt-6">
-            <div className="flex items-center justify-between text-base font-semibold">
-              <span>Total</span>
-              <span>₹{subtotal}</span>
-            </div>
-            <p className="mt-3 text-sm leading-7 text-slate-400">
-              Fast delivery and easy pickup options are available for most
-              Mumbai societies.
+          {cartItems.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              Your basket is completely empty.
             </p>
+          ) : (
+            <div className="divide-y divide-slate-200/60 max-h-80 overflow-y-auto pr-2">
+              {cartItems.map((item, index) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between py-3.5"
+                >
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-800 line-clamp-1">
+                      {item.title}
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Qty: {item.quantity || 1}
+                    </p>
+                  </div>
+                  <span className="text-sm font-semibold text-slate-900">
+                    ${(item.price * (item.quantity || 1)).toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="border-t border-slate-200 mt-6 pt-4 flex items-center justify-between font-bold text-slate-900">
+            <span>Total Value</span>
+            <span className="text-lg">${totalAmount.toFixed(2)}</span>
           </div>
-        </aside>
+        </div>
       </div>
     </main>
   );

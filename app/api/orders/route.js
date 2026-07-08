@@ -1,46 +1,54 @@
 import { NextResponse } from "next/server";
-import connectDB from "@/lib/db";
+import dbConnect from "@/lib/db";
 import Order from "@/models/order";
 
+// 1. Your existing POST function (handles creating orders)
 export async function POST(request) {
   try {
-    await connectDB();
-
+    await dbConnect();
     const body = await request.json();
-    const { name, society, flat, phone, payment, total, items } = body;
+    const { items, totalAmount, shippingAddress } = body;
 
-    if (
-      !name ||
-      !society ||
-      !flat ||
-      !phone ||
-      !payment ||
-      total === undefined
-    ) {
+    if (!items || items.length === 0 || !totalAmount || !shippingAddress) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 },
       );
     }
 
-    const order = await Order.create({
-      name,
-      society,
-      flat,
-      phone,
-      payment,
-      total,
-      items: items || [],
+    const newOrder = await Order.create({
+      items,
+      totalAmount,
+      shippingAddress,
+      status: "Pending",
     });
 
     return NextResponse.json(
-      { success: true, message: "Order placed successfully", order },
+      { message: "Order placed successfully!", order: newOrder },
       { status: 201 },
     );
   } catch (error) {
-    console.error("Order creation failed:", error);
+    console.error("Order API Error:", error);
     return NextResponse.json(
-      { error: "Failed to place order", details: error.message },
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
+  }
+}
+
+// 2. PASTE THE NEW GET FUNCTION HERE (handles fetching orders)
+export async function GET() {
+  try {
+    await dbConnect();
+
+    // Fetches all orders, newest first
+    const orders = await Order.find({}).sort({ createdAt: -1 });
+
+    return NextResponse.json({ orders }, { status: 200 });
+  } catch (error) {
+    console.error("Failed to fetch orders:", error);
+    return NextResponse.json(
+      { error: "Could not retrieve orders" },
       { status: 500 },
     );
   }
